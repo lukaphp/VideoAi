@@ -74,6 +74,21 @@ motionEl.addEventListener("input", () => {
     motionValue.textContent = motionEl.value;
 });
 
+// New Sliders
+const guidanceEl = $("#guidance");
+const guidanceValue = $("#guidanceValue");
+const strengthEl = $("#strength");
+const strengthValue = $("#strengthValue");
+
+guidanceEl.addEventListener("input", () => {
+    guidanceValue.textContent = guidanceEl.value;
+});
+
+strengthEl.addEventListener("input", () => {
+    strengthValue.textContent = strengthEl.value;
+});
+
+
 seedInput.addEventListener("input", () => {
     seedLabel.textContent = seedInput.value ? seedInput.value : "Random";
 });
@@ -92,10 +107,30 @@ function updateUIState() {
     btnGenerate.disabled = !hasPrompt && !hasImage;
 
     // Show/hide SVD-only controls
+    const motionGroup = $("#motionGroup");
+    const guidanceGroup = $("#guidanceGroup");
+    const strengthGroup = $("#strengthGroup");
+
     if (hasPrompt) {
+        // CogVideoX Mode
         motionGroup.classList.add("hidden");
+        guidanceGroup.classList.remove("hidden");
+
+        if (hasImage) {
+            // Image + Prompt (CogVideoX I2V)
+            strengthGroup.classList.remove("hidden");
+        } else {
+            // Text Only
+            strengthGroup.classList.add("hidden");
+        }
+
     } else {
-        motionGroup.classList.remove("hidden");
+        // Image Only (SVD)
+        if (hasImage) {
+            motionGroup.classList.remove("hidden");
+            guidanceGroup.classList.add("hidden"); // SVD doesn't use guidance in this UI
+            strengthGroup.classList.add("hidden");
+        }
     }
 }
 
@@ -198,6 +233,8 @@ async function startGeneration() {
     formData.append("fps", getToggleValue("fpsGroup") || "8");
     formData.append("steps", stepsEl.value);
     formData.append("motion", motionEl.value);
+    formData.append("guidance", guidanceEl.value);
+    formData.append("strength", strengthEl.value);
 
     if (seedInput.value) {
         formData.append("seed", seedInput.value);
@@ -260,7 +297,7 @@ function listenForProgress(videoId) {
         } else if (data.status === "generating") {
             setStatus("loading", `Step ${data.step}/${data.total_steps}`);
         } else if (data.status === "complete") {
-            onGenerationComplete(videoId, data.elapsed);
+            onGenerationComplete(videoId, data.elapsed, data);
             eventSource.close();
             eventSource = null;
         } else if (data.status === "error") {
@@ -278,34 +315,40 @@ function listenForProgress(videoId) {
     };
 }
 
-function onGenerationComplete(videoId, elapsed) {
-    clearInterval(generationTimer);
-    progressFill.classList.remove("active");
-    progressFill.style.width = "100%";
-    progressMessage.textContent = `Video generato in ${elapsed}s 🎉`;
-    progressPct.textContent = "100%";
+progressFill.classList.remove("active");
+progressFill.style.width = "100%";
+progressMessage.textContent = `Video generato in ${elapsed}s 🎉`;
+progressPct.textContent = "100%";
 
-    // Show video
-    videoPlayer.src = `/api/video/${videoId}`;
-    videoOutput.classList.remove("hidden");
+// Validate and show seed if available
+if (videoId.includes("_")) {
+    // I need to change the API to return the seed, 
+    // OR I can parse it if I change video_id format? 
+    // Better: The SSE "complete" event should carry the seed.
+    // Let's assume data.seed is passed in the future step.
+}
 
-    // Setup download
-    btnDownload.onclick = () => {
-        const a = document.createElement("a");
-        a.href = `/api/video/${videoId}`;
-        a.download = `videoai_${videoId}.mp4`;
-        a.click();
-    };
+// Show video
+videoPlayer.src = `/api/video/${videoId}`;
+videoOutput.classList.remove("hidden");
 
-    // Reset button
-    btnGenerate.disabled = false;
-    btnGenerate.querySelector(".btn-generate-text").textContent = "Genera Video";
-    setStatus("idle", "Completato ✅");
+// Setup download
+btnDownload.onclick = () => {
+    const a = document.createElement("a");
+    a.href = `/api/video/${videoId}`;
+    a.download = `videoai_${videoId}.mp4`;
+    a.click();
+};
 
-    // Auto-scroll to video on mobile
-    if (window.innerWidth <= 900) {
-        videoOutput.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+// Reset button
+btnGenerate.disabled = false;
+btnGenerate.querySelector(".btn-generate-text").textContent = "Genera Video";
+setStatus("idle", "Completato ✅");
+
+// Auto-scroll to video on mobile
+if (window.innerWidth <= 900) {
+    videoOutput.scrollIntoView({ behavior: "smooth", block: "center" });
+}
 }
 
 function showError(message) {

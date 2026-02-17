@@ -1,0 +1,12 @@
+=======================================================
+  🎬 AI Video Generator — Web UI
+  🌐 http://localhost:5001
+=======================================================
+💾 System RAM: 8.0 GB
+
+💡 Model will load on first generation request.
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+Address already in use
+Port 5001 is in use by another program. Either identify and stop that program, or start the server with a different port.

@@ -79,13 +79,21 @@ def ensure_pipeline(mode="cogvideo"):
         return False
 
     pipeline_loading = True
-    model_name = "CogVideoX-2B" if mode == "cogvideo" else "SVD"
+    model_labels = {
+        "cogvideo": "CogVideoX-2B",
+        "cogvideo_i2v": "CogVideoX-5B-I2V",
+        "svd": "SVD"
+    }
+    model_name = model_labels.get(mode, mode)
+    
     update_state(status="loading", message=f"Loading {model_name} model...", progress=0)
 
     try:
         gen = _get_gen()
         if mode == "cogvideo":
             pipe, device = gen.create_cogvideo_pipeline()
+        elif mode == "cogvideo_i2v":
+            pipe, device = gen.create_cogvideo_i2v_pipeline()
         else:
             pipe, device = gen.create_svd_pipeline()
 
@@ -164,12 +172,17 @@ def generate():
     fps = int(request.form.get("fps", 8))
     steps = int(request.form.get("steps", 30))
     motion = int(request.form.get("motion", 100))
+    guidance = float(request.form.get("guidance", 6.0))
+    strength = float(request.form.get("strength", 0.8))
     seed = request.form.get("seed", None)
 
     if seed is not None and seed != "":
         seed = int(seed)
     else:
-        seed = None
+        # User requested NO RANDOMNESS ever.
+        # We clamp the seed to a fixed number (e.g. 42) to ensure
+        # the same image + prompt always yields the same result.
+        seed = 42
 
     # ── Determine mode ──
     has_image = "image" in request.files and request.files["image"].filename != ""
@@ -188,8 +201,13 @@ def generate():
     video_id = str(uuid.uuid4())[:8]
 
     # ── Decide which pipeline to use ──
-    # Prompt → CogVideoX, Image only → SVD
+    # Prompt + Image → CogVideoX-5B-I2V (New!)
+    # Prompt Only → CogVideoX-2B
+    # Image Only → SVD
     use_cogvideo = has_prompt
+    
+    # If using CogVideoX, we need to handle image vs no-image inside logic
+    # (Already handled in the updated logic block)
 
     def run_generation():
         try:
@@ -206,49 +224,99 @@ def generate():
                 )
 
             if use_cogvideo:
-                # ── Text-to-video with CogVideoX ──
-                update_state(
-                    status="loading",
-                    message="Loading CogVideoX-2B model...",
-                    progress=0,
-                    video_id=video_id,
-                )
+                if has_image:
+                    # ── Image-to-Video with Prompt (CogVideoX-5B) ──
+                    model_name = "CogVideoX-5B-I2V"
+                    update_state(
+                        status="loading",
+                        message=f"Loading {model_name} (High Quality)...",
+                        progress=0,
+                        video_id=video_id,
+                    )
 
-                if not ensure_pipeline("cogvideo"):
-                    return
+                    if not ensure_pipeline("cogvideo_i2v"):
+                        return
 
-                pipe, device = pipelines["cogvideo"]
-                res = gen.RESOLUTION_PRESETS[resolution]
-                gen_w, gen_h = res["gen"]
-                out_w, out_h = res["out"]
+                    pipe, device = pipelines["cogvideo_i2v"]
+                    
+                    # Resize/Crop image to 600x480 (approx fits 12GB VRAM better than 720p)
+                    # CogVideoX-5b native is 720x480 but 8-bit might need slightly less pixels for safety?
+                    # Let's try native 720x480.
+                    gen_w, gen_h = 720, 480
+                    
+                    # Prepare image
+                    input_image = gen.prepare_image(request.files["image"], gen_w, gen_h)
 
-                # CogVideoX generates at 8fps internally
-                num_frames = min(int(duration * 8), 49)
+                    # 8-bit inference often needs slightly fewer frames to be safe on 12GB?
+                    # Let's stick to user request but cap at 49.
+                    num_frames = min(int(duration * 8), 49)
 
-                update_state(
-                    status="generating",
-                    message="Starting CogVideoX generation...",
-                    progress=0,
-                )
+                    update_state(
+                        status="generating",
+                        message=f"Generating with {model_name}...",
+                        progress=0,
+                    )
 
-                frames = gen.generate_video_from_prompt(
-                    pipe=pipe,
-                    prompt=prompt,
-                    device=device,
-                    num_frames=num_frames,
-                    num_inference_steps=steps,
-                    gen_width=gen_w,
-                    gen_height=gen_h,
-                    seed=seed,
-                    progress_callback=progress_callback,
-                )
+                    frames = gen.generate_video_from_image_prompt(
+                        pipe=pipe,
+                        prompt=prompt,
+                        image=input_image,
+                        device=device,
+                        num_frames=num_frames,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance,
+                        strength=strength, # Denoising strength
+                        seed=seed,
+                        progress_callback=progress_callback,
+                    )
+                    
+                    output_fps = fps
 
-                # Upscale if needed
-                if (out_w, out_h) != (gen_w, gen_h):
-                    update_state(message="Upscaling to target resolution...")
-                    frames = gen.upscale_frames(frames, out_w, out_h)
+                else:
+                    # ── Text-to-Video (CogVideoX-2B) ──
+                    update_state(
+                        status="loading",
+                        message="Loading CogVideoX-2B model...",
+                        progress=0,
+                        video_id=video_id,
+                    )
 
-                output_fps = fps
+                    if not ensure_pipeline("cogvideo"):
+                        return
+
+                    pipe, device = pipelines["cogvideo"]
+                    res = gen.RESOLUTION_PRESETS[resolution]
+                    gen_w, gen_h = res["gen"]
+                    out_w, out_h = res["out"]
+
+                    # CogVideoX generates at 8fps internally
+                    num_frames = min(int(duration * 8), 49)
+
+                    update_state(
+                        status="generating",
+                        message="Starting CogVideoX-2B generation...",
+                        progress=0,
+                    )
+
+                    frames = gen.generate_video_from_prompt(
+                        pipe=pipe,
+                        prompt=prompt,
+                        device=device,
+                        num_frames=num_frames,
+                        num_inference_steps=steps,
+                        guidance_scale=guidance,
+                        gen_width=gen_w,
+                        gen_height=gen_h,
+                        seed=seed,
+                        progress_callback=progress_callback,
+                    )
+
+                    # Upscale if needed
+                    if (out_w, out_h) != (gen_w, gen_h):
+                        update_state(message="Upscaling to target resolution...")
+                        frames = gen.upscale_frames(frames, out_w, out_h)
+
+                    output_fps = fps
 
             else:
                 # ── Image-to-video with SVD ──
@@ -304,6 +372,7 @@ def generate():
                 video_path=output_path,
                 video_id=video_id,
                 elapsed=round(elapsed, 1),
+                seed=seed,
             )
 
         except Exception as e:
