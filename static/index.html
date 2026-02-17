@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VideoAi — AI Video Generator</title>
+    <meta name="description"
+        content="Generate videos from images using AI, locally on your Mac. Powered by Stable Video Diffusion.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <!-- ─── Background Effects ─── -->
+    <div class="bg-gradient"></div>
+    <div class="bg-grid"></div>
+
+    <!-- ─── Header ─── -->
+    <header class="header">
+        <div class="logo">
+            <span class="logo-icon">🎬</span>
+            <h1>Video<span class="accent">Ai</span></h1>
+        </div>
+        <div class="header-status" id="headerStatus">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusLabel">Pronto</span>
+        </div>
+    </header>
+
+    <!-- ─── Main Layout ─── -->
+    <main class="container">
+
+        <!-- ─── Left: Upload & Preview ─── -->
+        <section class="panel panel-upload">
+            <h2>📷 Immagine Sorgente</h2>
+
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-content" id="uploadContent">
+                    <div class="upload-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                    </div>
+                    <p class="upload-text">Trascina un'immagine qui</p>
+                    <p class="upload-hint">oppure clicca per selezionare</p>
+                    <p class="upload-formats">JPG, PNG, WebP — max 10MB</p>
+                </div>
+                <img id="imagePreview" class="image-preview hidden" alt="Preview">
+                <button class="btn-remove hidden" id="btnRemove" title="Rimuovi immagine">✕</button>
+                <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp" hidden>
+            </div>
+
+            <!-- ─── Video Output ─── -->
+            <div class="video-output hidden" id="videoOutput">
+                <h2>🎞️ Video Generato</h2>
+                <video id="videoPlayer" controls loop playsinline></video>
+                <div class="video-actions">
+                    <button class="btn btn-secondary" id="btnDownload">
+                        <span>⬇️</span> Scarica MP4
+                    </button>
+                    <button class="btn btn-ghost" id="btnNewVideo">
+                        <span>🔄</span> Nuovo Video
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ─── Right: Controls ─── -->
+        <section class="panel panel-controls">
+            <h2>⚙️ Parametri</h2>
+
+            <div class="preset-bar">
+                <button class="btn btn-accent" id="btnPreset" title="Carica i valori ottimali per 8GB RAM">
+                    ⚡ Safety Preset
+                </button>
+                <span class="preset-hint">Ottimizzato per M1 8GB</span>
+            </div>
+
+            <div class="controls-grid">
+                <!-- Resolution -->
+                <div class="control-group">
+                    <label>
+                        Larghezza
+                        <span class="control-value" id="widthValue">448</span>px
+                    </label>
+                    <input type="range" id="width" min="256" max="1024" step="64" value="448">
+                </div>
+                <div class="control-group">
+                    <label>
+                        Altezza
+                        <span class="control-value" id="heightValue">256</span>px
+                    </label>
+                    <input type="range" id="height" min="256" max="1024" step="64" value="256">
+                </div>
+
+                <!-- Sampling -->
+                <div class="control-group">
+                    <label>
+                        Sampling Steps
+                        <span class="control-value" id="stepsValue">20</span>
+                    </label>
+                    <input type="range" id="steps" min="5" max="50" step="1" value="20">
+                    <div class="control-hint">Più step = più qualità, più lento</div>
+                </div>
+
+                <!-- Motion -->
+                <div class="control-group">
+                    <label>
+                        Motion Intensity
+                        <span class="control-value" id="motionValue">100</span>
+                    </label>
+                    <input type="range" id="motion" min="1" max="255" step="1" value="100">
+                    <div class="control-hint">Basso = statico · Alto = movimento forte</div>
+                </div>
+
+                <!-- FPS -->
+                <div class="control-group">
+                    <label>
+                        FPS
+                        <span class="control-value" id="fpsValue">6</span>
+                    </label>
+                    <input type="range" id="fps" min="2" max="30" step="1" value="6">
+                </div>
+
+                <!-- Frames -->
+                <div class="control-group">
+                    <label>
+                        Frames
+                        <span class="control-value" id="framesValue">10</span>
+                    </label>
+                    <input type="range" id="frames" min="4" max="25" step="1" value="10">
+                    <div class="control-hint">Max 10 consigliato per 8GB</div>
+                </div>
+
+                <!-- Seed -->
+                <div class="control-group">
+                    <label>
+                        Seed
+                        <span class="control-value-text" id="seedLabel">Random</span>
+                    </label>
+                    <input type="number" id="seed" class="input-number" placeholder="Lascia vuoto per random" min="0"
+                        max="999999999">
+                </div>
+            </div>
+
+            <!-- ─── Progress ─── -->
+            <div class="progress-section hidden" id="progressSection">
+                <div class="progress-header">
+                    <span id="progressMessage">Preparazione...</span>
+                    <span class="progress-pct" id="progressPct">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-timer" id="progressTimer"></div>
+            </div>
+
+            <!-- ─── Generate Button ─── -->
+            <button class="btn btn-generate" id="btnGenerate" disabled>
+                <span class="btn-generate-icon">🚀</span>
+                <span class="btn-generate-text">Genera Video</span>
+            </button>
+
+            <!-- ─── Memory Warning ─── -->
+            <div class="memory-warning" id="memoryWarning">
+                <span>💡</span>
+                <span>Chiudi tutte le altre app per prestazioni migliori. Il primo run scarica il modello (~4GB).</span>
+            </div>
+        </section>
+    </main>
+
+    <!-- ─── Footer ─── -->
+    <footer class="footer">
+        <p>VideoAi — Generazione video AI 100% locale e privata</p>
+        <p class="footer-tech">Stable Video Diffusion · Apple Metal · Python</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
