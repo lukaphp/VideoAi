@@ -1,6 +1,7 @@
 /**
  * app.js — VideoAi Frontend Logic
- * Handles image upload, parameter controls, API communication, and video playback.
+ * Handles prompt input, image upload, parameter controls, API communication, and video playback.
+ * Supports text-to-video (CogVideoX) and image-to-video (SVD).
  */
 
 // ─── DOM Elements ────────────────────────────────────────────────────────────
@@ -12,7 +13,6 @@ const imagePreview = $("#imagePreview");
 const btnRemove = $("#btnRemove");
 const fileInput = $("#fileInput");
 const btnGenerate = $("#btnGenerate");
-const btnPreset = $("#btnPreset");
 const btnDownload = $("#btnDownload");
 const btnNewVideo = $("#btnNewVideo");
 const progressSection = $("#progressSection");
@@ -24,16 +24,14 @@ const videoOutput = $("#videoOutput");
 const videoPlayer = $("#videoPlayer");
 const statusDot = $("#statusDot");
 const statusLabel = $("#statusLabel");
+const promptInput = $("#promptInput");
+const motionGroup = $("#motionGroup");
 
-// Parameter controls
-const controls = {
-    width: { el: $("#width"), display: $("#widthValue") },
-    height: { el: $("#height"), display: $("#heightValue") },
-    steps: { el: $("#steps"), display: $("#stepsValue") },
-    motion: { el: $("#motion"), display: $("#motionValue") },
-    fps: { el: $("#fps"), display: $("#fpsValue") },
-    frames: { el: $("#frames"), display: $("#framesValue") },
-};
+// Slider controls
+const stepsEl = $("#steps");
+const stepsValue = $("#stepsValue");
+const motionEl = $("#motion");
+const motionValue = $("#motionValue");
 const seedInput = $("#seed");
 const seedLabel = $("#seedLabel");
 
@@ -43,45 +41,63 @@ let generationTimer = null;
 let generationStartTime = null;
 let eventSource = null;
 
-// ─── Safety Preset ───────────────────────────────────────────────────────────
+// ─── Toggle Groups ──────────────────────────────────────────────────────────
 
-const SAFETY_PRESET = {
-    width: 448,
-    height: 256,
-    steps: 20,
-    motion: 100,
-    fps: 6,
-    frames: 10,
-};
-
-function applyPreset() {
-    Object.entries(SAFETY_PRESET).forEach(([key, value]) => {
-        if (controls[key]) {
-            controls[key].el.value = value;
-            controls[key].display.textContent = value;
-        }
-    });
-    seedInput.value = "";
-    seedLabel.textContent = "Random";
-
-    // Flash animation
-    btnPreset.style.transform = "scale(0.95)";
-    setTimeout(() => { btnPreset.style.transform = ""; }, 150);
+function getToggleValue(groupId) {
+    const group = document.getElementById(groupId);
+    const active = group.querySelector(".toggle-btn.active");
+    return active ? active.dataset.value : null;
 }
+
+function setupToggleGroup(groupId) {
+    const group = document.getElementById(groupId);
+    group.querySelectorAll(".toggle-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            group.querySelectorAll(".toggle-btn").forEach(b => b.classList.remove("active"));
+            btn.classList.add("active");
+            updateUIState();
+        });
+    });
+}
+
+setupToggleGroup("resolutionGroup");
+setupToggleGroup("durationGroup");
+setupToggleGroup("fpsGroup");
 
 // ─── Slider Binding ──────────────────────────────────────────────────────────
 
-Object.entries(controls).forEach(([key, ctrl]) => {
-    ctrl.el.addEventListener("input", () => {
-        ctrl.display.textContent = ctrl.el.value;
-    });
+stepsEl.addEventListener("input", () => {
+    stepsValue.textContent = stepsEl.value;
+});
+
+motionEl.addEventListener("input", () => {
+    motionValue.textContent = motionEl.value;
 });
 
 seedInput.addEventListener("input", () => {
     seedLabel.textContent = seedInput.value ? seedInput.value : "Random";
 });
 
-btnPreset.addEventListener("click", applyPreset);
+// ─── Prompt Handling ─────────────────────────────────────────────────────────
+
+promptInput.addEventListener("input", () => {
+    updateUIState();
+});
+
+function updateUIState() {
+    const hasPrompt = promptInput.value.trim().length > 0;
+    const hasImage = uploadedFile !== null;
+
+    // Enable generate button if we have prompt or image
+    btnGenerate.disabled = !hasPrompt && !hasImage;
+
+    // Show/hide SVD-only controls
+    if (hasPrompt) {
+        motionGroup.classList.add("hidden");
+    } else {
+        motionGroup.classList.remove("hidden");
+    }
+}
 
 // ─── Image Upload ────────────────────────────────────────────────────────────
 
@@ -107,7 +123,7 @@ function handleFile(file) {
         btnRemove.classList.remove("hidden");
         uploadContent.classList.add("hidden");
         uploadZone.classList.add("has-image");
-        btnGenerate.disabled = false;
+        updateUIState();
     };
     reader.readAsDataURL(file);
 }
@@ -119,8 +135,8 @@ function removeImage() {
     btnRemove.classList.add("hidden");
     uploadContent.classList.remove("hidden");
     uploadZone.classList.remove("has-image");
-    btnGenerate.disabled = true;
     fileInput.value = "";
+    updateUIState();
 }
 
 // Click to upload
@@ -158,20 +174,31 @@ btnRemove.addEventListener("click", (e) => {
 // ─── Generation ──────────────────────────────────────────────────────────────
 
 async function startGeneration() {
-    if (!uploadedFile) return;
+    const prompt = promptInput.value.trim();
+    const hasImage = uploadedFile !== null;
+
+    if (!prompt && !hasImage) return;
 
     // Hide previous video
     videoOutput.classList.add("hidden");
 
     // Build FormData
     const formData = new FormData();
-    formData.append("image", uploadedFile);
-    formData.append("width", controls.width.el.value);
-    formData.append("height", controls.height.el.value);
-    formData.append("steps", controls.steps.el.value);
-    formData.append("motion", controls.motion.el.value);
-    formData.append("fps", controls.fps.el.value);
-    formData.append("frames", controls.frames.el.value);
+
+    if (prompt) {
+        formData.append("prompt", prompt);
+    }
+    if (hasImage) {
+        formData.append("image", uploadedFile);
+    }
+
+    // Parameters
+    formData.append("resolution", getToggleValue("resolutionGroup") || "480p");
+    formData.append("duration", getToggleValue("durationGroup") || "6");
+    formData.append("fps", getToggleValue("fpsGroup") || "8");
+    formData.append("steps", stepsEl.value);
+    formData.append("motion", motionEl.value);
+
     if (seedInput.value) {
         formData.append("seed", seedInput.value);
     }
@@ -180,7 +207,7 @@ async function startGeneration() {
     progressSection.classList.remove("hidden");
     progressFill.style.width = "0%";
     progressFill.classList.add("active");
-    progressMessage.textContent = "Invio immagine...";
+    progressMessage.textContent = prompt ? "Avvio generazione text-to-video..." : "Invio immagine...";
     progressPct.textContent = "0%";
     btnGenerate.disabled = true;
     btnGenerate.querySelector(".btn-generate-text").textContent = "Generazione in corso...";
@@ -244,7 +271,6 @@ function listenForProgress(videoId) {
     };
 
     eventSource.onerror = () => {
-        // SSE connection closed by server (normal after complete/error)
         if (eventSource) {
             eventSource.close();
             eventSource = null;
@@ -308,6 +334,7 @@ btnNewVideo.addEventListener("click", () => {
     videoOutput.classList.add("hidden");
     progressSection.classList.add("hidden");
     videoPlayer.src = "";
+    promptInput.value = "";
     removeImage();
     setStatus("idle", "Pronto");
 });
@@ -323,11 +350,16 @@ function setStatus(type, text) {
 
 // ─── Init ────────────────────────────────────────────────────────────────────
 
-// Check server health on load
 (async function init() {
     try {
         const res = await fetch("/api/health");
         const data = await res.json();
+
+        if (data.capabilities && !data.capabilities.text_to_video) {
+            // No CUDA GPU — show warning
+            promptInput.placeholder = "⚠️ Text-to-video richiede GPU NVIDIA. Usa un'immagine per generare.";
+        }
+
         if (data.model_loaded) {
             setStatus("idle", "Modello pronto");
         } else {

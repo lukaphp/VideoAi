@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 app.py — Flask Web Server for AI Video Generation
-Serves a premium web UI and handles video generation requests.
+Supports text-to-video (CogVideoX) and image-to-video (SVD).
 """
 
 import os
@@ -31,17 +31,6 @@ def _get_gen():
         _gen_module = gv
     return _gen_module
 
-# Default preset (duplicated for when torch isn't installed yet)
-SAFETY_PRESET = {
-    "width": 448,
-    "height": 256,
-    "num_inference_steps": 20,
-    "motion_bucket_id": 100,
-    "fps": 6,
-    "num_frames": 10,
-    "noise_aug_strength": 0.02,
-    "decode_chunk_size": 2,
-}
 
 # ─── App Setup ───────────────────────────────────────────────────────────────
 
@@ -56,7 +45,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── Global State ────────────────────────────────────────────────────────────
 
-pipeline = None
+pipelines = {}       # {"cogvideo": (pipe, device), "svd": (pipe, device)}
 pipeline_loading = False
 generation_state = {
     "status": "idle",        # idle | loading | generating | complete | error
@@ -79,28 +68,36 @@ def update_state(**kwargs):
 
 # ─── Pipeline Management ────────────────────────────────────────────────────
 
-def ensure_pipeline():
+def ensure_pipeline(mode="cogvideo"):
     """Load pipeline lazily on first generation request."""
-    global pipeline, pipeline_loading
+    global pipelines, pipeline_loading
 
-    if pipeline is not None:
+    if mode in pipelines:
         return True
 
     if pipeline_loading:
         return False
 
     pipeline_loading = True
-    update_state(status="loading", message="Loading SVD model (~60s first time)...", progress=0)
+    model_name = "CogVideoX-2B" if mode == "cogvideo" else "SVD"
+    update_state(status="loading", message=f"Loading {model_name} model...", progress=0)
 
     try:
-        pipe, device = _get_gen().create_pipeline()
-        pipeline = (pipe, device)
+        gen = _get_gen()
+        if mode == "cogvideo":
+            pipe, device = gen.create_cogvideo_pipeline()
+        else:
+            pipe, device = gen.create_svd_pipeline()
+
+        pipelines[mode] = (pipe, device)
         pipeline_loading = False
-        update_state(status="idle", message="Model loaded ✅")
+        update_state(status="idle", message=f"{model_name} loaded ✅")
         return True
     except Exception as e:
         pipeline_loading = False
         update_state(status="error", message=f"Failed to load model: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -119,12 +116,19 @@ def health():
         device = _get_gen().get_device()
     except Exception:
         device = "unknown"
+
     return jsonify({
         "status": "ok",
-        "model_loaded": pipeline is not None,
+        "model_loaded": len(pipelines) > 0,
         "model_loading": pipeline_loading,
         "device": device,
-        "preset": SAFETY_PRESET,
+        "capabilities": {
+            "text_to_video": device == "cuda",
+            "image_to_video": True,
+            "resolutions": ["480p", "720p", "1080p"],
+            "fps_options": [6, 8, 25, 30],
+            "durations": [2, 4, 6],
+        },
     })
 
 
@@ -149,54 +153,48 @@ def status():
 
 @app.route("/api/generate", methods=["POST"])
 def generate():
-    """Start video generation from uploaded image."""
+    """Start video generation from prompt and/or image."""
     if generation_state["status"] in ("loading", "generating"):
         return jsonify({"error": "Generation already in progress"}), 409
 
-    # ── Parse uploaded image ──
-    if "image" not in request.files:
-        return jsonify({"error": "No image uploaded"}), 400
-
-    file = request.files["image"]
-    if file.filename == "":
-        return jsonify({"error": "Empty filename"}), 400
-
     # ── Parse parameters ──
-    params = {
-        "width": int(request.form.get("width", SAFETY_PRESET["width"])),
-        "height": int(request.form.get("height", SAFETY_PRESET["height"])),
-        "num_inference_steps": int(request.form.get("steps", SAFETY_PRESET["num_inference_steps"])),
-        "motion_bucket_id": int(request.form.get("motion", SAFETY_PRESET["motion_bucket_id"])),
-        "fps": int(request.form.get("fps", SAFETY_PRESET["fps"])),
-        "num_frames": int(request.form.get("frames", SAFETY_PRESET["num_frames"])),
-        "seed": request.form.get("seed", None),
-    }
-    if params["seed"] is not None and params["seed"] != "":
-        params["seed"] = int(params["seed"])
-    else:
-        params["seed"] = None
+    prompt = request.form.get("prompt", "").strip()
+    resolution = request.form.get("resolution", "480p")
+    duration = float(request.form.get("duration", 6))
+    fps = int(request.form.get("fps", 8))
+    steps = int(request.form.get("steps", 30))
+    motion = int(request.form.get("motion", 100))
+    seed = request.form.get("seed", None)
 
-    # ── Save uploaded image ──
-    image_data = file.read()
-    image = Image.open(io.BytesIO(image_data)).convert("RGB")
-    image = image.resize((params["width"], params["height"]), Image.LANCZOS)
+    if seed is not None and seed != "":
+        seed = int(seed)
+    else:
+        seed = None
+
+    # ── Determine mode ──
+    has_image = "image" in request.files and request.files["image"].filename != ""
+    has_prompt = len(prompt) > 0
+
+    if not has_prompt and not has_image:
+        return jsonify({"error": "Provide a text prompt or upload an image"}), 400
+
+    # Parse image if provided
+    image = None
+    if has_image:
+        file = request.files["image"]
+        image_data = file.read()
+        image = Image.open(io.BytesIO(image_data)).convert("RGB")
 
     video_id = str(uuid.uuid4())[:8]
 
-    # ── Start generation in background ──
+    # ── Decide which pipeline to use ──
+    # Prompt → CogVideoX, Image only → SVD
+    use_cogvideo = has_prompt
+
     def run_generation():
         try:
-            update_state(
-                status="loading",
-                message="Loading model...",
-                progress=0,
-                video_id=video_id,
-            )
-
-            if not ensure_pipeline():
-                return
-
-            pipe, device = pipeline
+            gen = _get_gen()
+            start_time = time.time()
 
             def progress_callback(pct, step, total):
                 update_state(
@@ -204,37 +202,100 @@ def generate():
                     progress=pct,
                     step=step,
                     total_steps=total,
-                    message=f"Generating frame data... Step {step}/{total}",
+                    message=f"Generating... Step {step}/{total}",
                 )
 
-            update_state(
-                status="generating",
-                message="Starting generation...",
-                progress=0,
-            )
+            if use_cogvideo:
+                # ── Text-to-video with CogVideoX ──
+                update_state(
+                    status="loading",
+                    message="Loading CogVideoX-2B model...",
+                    progress=0,
+                    video_id=video_id,
+                )
 
-            start_time = time.time()
+                if not ensure_pipeline("cogvideo"):
+                    return
 
-            frames, fps = _get_gen().generate_video(
-                pipe=pipe,
-                image=image,
-                device=device,
-                width=params["width"],
-                height=params["height"],
-                num_frames=params["num_frames"],
-                num_inference_steps=params["num_inference_steps"],
-                motion_bucket_id=params["motion_bucket_id"],
-                fps=params["fps"],
-                seed=params["seed"],
-                progress_callback=progress_callback,
-            )
+                pipe, device = pipelines["cogvideo"]
+                res = gen.RESOLUTION_PRESETS[resolution]
+                gen_w, gen_h = res["gen"]
+                out_w, out_h = res["out"]
+
+                # CogVideoX generates at 8fps internally
+                num_frames = min(int(duration * 8), 49)
+
+                update_state(
+                    status="generating",
+                    message="Starting CogVideoX generation...",
+                    progress=0,
+                )
+
+                frames = gen.generate_video_from_prompt(
+                    pipe=pipe,
+                    prompt=prompt,
+                    device=device,
+                    num_frames=num_frames,
+                    num_inference_steps=steps,
+                    gen_width=gen_w,
+                    gen_height=gen_h,
+                    seed=seed,
+                    progress_callback=progress_callback,
+                )
+
+                # Upscale if needed
+                if (out_w, out_h) != (gen_w, gen_h):
+                    update_state(message="Upscaling to target resolution...")
+                    frames = gen.upscale_frames(frames, out_w, out_h)
+
+                output_fps = fps
+
+            else:
+                # ── Image-to-video with SVD ──
+                update_state(
+                    status="loading",
+                    message="Loading SVD model...",
+                    progress=0,
+                    video_id=video_id,
+                )
+
+                if not ensure_pipeline("svd"):
+                    return
+
+                pipe, device = pipelines["svd"]
+
+                # For SVD, resize image to generation size
+                svd_w = int(request.form.get("width", gen.DEFAULTS["svd_width"]))
+                svd_h = int(request.form.get("height", gen.DEFAULTS["svd_height"]))
+                num_frames = int(request.form.get("frames", gen.DEFAULTS["svd_frames"]))
+                resized_image = image.resize((svd_w, svd_h), Image.LANCZOS)
+
+                update_state(
+                    status="generating",
+                    message="Starting SVD generation...",
+                    progress=0,
+                )
+
+                frames, output_fps = gen.generate_video_from_image(
+                    pipe=pipe,
+                    image=resized_image,
+                    device=device,
+                    width=svd_w,
+                    height=svd_h,
+                    num_frames=num_frames,
+                    num_inference_steps=steps,
+                    motion_bucket_id=motion,
+                    fps=fps,
+                    seed=seed,
+                    progress_callback=progress_callback,
+                )
 
             elapsed = time.time() - start_time
 
             # Save video
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_path = str(OUTPUT_DIR / f"video_{timestamp}_{video_id}.mp4")
-            _get_gen().save_video(frames, fps, output_path)
+            gen.save_video(frames, output_fps if not use_cogvideo else fps, output_path)
 
             update_state(
                 status="complete",
@@ -246,6 +307,8 @@ def generate():
             )
 
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             update_state(
                 status="error",
                 message=f"Generation failed: {str(e)}",

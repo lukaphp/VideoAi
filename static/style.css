@@ -1,7 +1,9 @@
 /* ─── VideoAi — Premium Dark Glassmorphism Theme ─────────────────────────── */
 
 /* ─── Reset & Base ─── */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
@@ -145,8 +147,15 @@ body {
 }
 
 @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
 }
 
 /* ─── Main Layout ─── */
@@ -475,18 +484,21 @@ input[type="range"]:hover {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-        90deg,
-        transparent,
-        rgba(255, 255, 255, 0.3),
-        transparent
-    );
+    background: linear-gradient(90deg,
+            transparent,
+            rgba(255, 255, 255, 0.3),
+            transparent);
     animation: shimmer 1.5s infinite;
 }
 
 @keyframes shimmer {
-    0% { transform: translateX(-100%); }
-    100% { transform: translateX(100%); }
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
 }
 
 .progress-timer {
@@ -569,19 +581,24 @@ input[type="range"]:hover {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-        135deg,
-        transparent 30%,
-        rgba(255, 255, 255, 0.1) 50%,
-        transparent 70%
-    );
+    background: linear-gradient(135deg,
+            transparent 30%,
+            rgba(255, 255, 255, 0.1) 50%,
+            transparent 70%);
     background-size: 200% 100%;
     animation: btn-shine 3s ease-in-out infinite;
 }
 
 @keyframes btn-shine {
-    0%, 100% { background-position: 200% 0; }
-    50% { background-position: -100% 0; }
+
+    0%,
+    100% {
+        background-position: 200% 0;
+    }
+
+    50% {
+        background-position: -100% 0;
+    }
 }
 
 .btn-generate:hover:not(:disabled) {
@@ -627,6 +644,124 @@ input[type="range"]:hover {
     line-height: 1.5;
 }
 
+/* ─── Prompt Section ─── */
+.prompt-section {
+    margin-bottom: 1.4rem;
+}
+
+.prompt-input {
+    width: 100%;
+    padding: 0.9rem 1rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    min-height: 100px;
+}
+
+.prompt-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-bg), 0 0 20px rgba(124, 92, 255, 0.1);
+}
+
+.prompt-input::placeholder {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+}
+
+.prompt-hint {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 0.4rem;
+    padding-left: 0.2rem;
+}
+
+/* ─── Optional Badge ─── */
+.optional-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--accent-light);
+    background: var(--accent-bg);
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+    letter-spacing: 0.02em;
+}
+
+/* ─── Compact Upload Zone ─── */
+.upload-zone-compact {
+    min-height: 120px;
+    padding: 1.5rem 2rem;
+}
+
+.upload-zone-compact .upload-content {
+    flex-direction: row;
+    gap: 0.8rem;
+}
+
+.upload-icon-small {
+    color: var(--text-muted);
+    transition: color var(--transition);
+    flex-shrink: 0;
+}
+
+.upload-zone:hover .upload-icon-small {
+    color: var(--accent);
+}
+
+.upload-text-sm {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* ─── Toggle Group Buttons ─── */
+.toggle-group {
+    display: flex;
+    gap: 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-input);
+}
+
+.toggle-btn {
+    flex: 1;
+    padding: 0.5rem 0.8rem;
+    background: transparent;
+    color: var(--text-muted);
+    border: none;
+    font-family: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+    position: relative;
+    white-space: nowrap;
+}
+
+.toggle-btn:not(:last-child) {
+    border-right: 1px solid var(--border-subtle);
+}
+
+.toggle-btn:hover {
+    color: var(--text-primary);
+    background: rgba(124, 92, 255, 0.05);
+}
+
+.toggle-btn.active {
+    color: white;
+    background: linear-gradient(135deg, var(--accent), #6040cc);
+    box-shadow: 0 2px 8px var(--accent-glow);
+}
+
 /* ─── Footer ─── */
 .footer {
     text-align: center;
@@ -653,6 +788,7 @@ input[type="range"]:hover {
         opacity: 0;
         transform: translateY(12px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);

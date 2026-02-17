@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VideoAi — AI Video Generator</title>
     <meta name="description"
-        content="Generate videos from images using AI, locally on your Mac. Powered by Stable Video Diffusion.">
+        content="Generate videos from text prompts or images using AI. Powered by CogVideoX and Stable Video Diffusion.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
@@ -34,23 +34,33 @@
     <!-- ─── Main Layout ─── -->
     <main class="container">
 
-        <!-- ─── Left: Upload & Preview ─── -->
+        <!-- ─── Left: Input & Preview ─── -->
         <section class="panel panel-upload">
-            <h2>📷 Immagine Sorgente</h2>
+            <!-- ─── Text Prompt ─── -->
+            <h2>✍️ Prompt</h2>
+            <div class="prompt-section">
+                <textarea id="promptInput" class="prompt-input"
+                    placeholder="Descrivi il video che vuoi generare...&#10;&#10;Es: A cat walking in a sunny garden with butterflies flying around"
+                    rows="4"></textarea>
+                <div class="prompt-hint">
+                    Scrivi in inglese per risultati migliori. Lascia vuoto per usare solo l'immagine (SVD).
+                </div>
+            </div>
 
-            <div class="upload-zone" id="uploadZone">
+            <!-- ─── Image Upload (optional with prompt) ─── -->
+            <h2>📷 Immagine <span class="optional-badge">opzionale con prompt</span></h2>
+
+            <div class="upload-zone upload-zone-compact" id="uploadZone">
                 <div class="upload-content" id="uploadContent">
-                    <div class="upload-icon">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    <div class="upload-icon-small">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                             <polyline points="17 8 12 3 7 8" />
                             <line x1="12" y1="3" x2="12" y2="15" />
                         </svg>
                     </div>
-                    <p class="upload-text">Trascina un'immagine qui</p>
-                    <p class="upload-hint">oppure clicca per selezionare</p>
-                    <p class="upload-formats">JPG, PNG, WebP — max 10MB</p>
+                    <p class="upload-text-sm">Trascina o clicca per caricare</p>
                 </div>
                 <img id="imagePreview" class="image-preview hidden" alt="Preview">
                 <button class="btn-remove hidden" id="btnRemove" title="Rimuovi immagine">✕</button>
@@ -76,67 +86,57 @@
         <section class="panel panel-controls">
             <h2>⚙️ Parametri</h2>
 
-            <div class="preset-bar">
-                <button class="btn btn-accent" id="btnPreset" title="Carica i valori ottimali per 8GB RAM">
-                    ⚡ Safety Preset
-                </button>
-                <span class="preset-hint">Ottimizzato per M1 8GB</span>
-            </div>
-
             <div class="controls-grid">
-                <!-- Resolution -->
+                <!-- Resolution Preset -->
                 <div class="control-group">
-                    <label>
-                        Larghezza
-                        <span class="control-value" id="widthValue">448</span>px
-                    </label>
-                    <input type="range" id="width" min="256" max="1024" step="64" value="448">
-                </div>
-                <div class="control-group">
-                    <label>
-                        Altezza
-                        <span class="control-value" id="heightValue">256</span>px
-                    </label>
-                    <input type="range" id="height" min="256" max="1024" step="64" value="256">
+                    <label>Risoluzione</label>
+                    <div class="toggle-group" id="resolutionGroup">
+                        <button class="toggle-btn active" data-value="480p">480p</button>
+                        <button class="toggle-btn" data-value="720p">720p</button>
+                        <button class="toggle-btn" data-value="1080p">1080p</button>
+                    </div>
+                    <div class="control-hint">720p/1080p: upscaling post-generazione</div>
                 </div>
 
-                <!-- Sampling -->
+                <!-- Duration -->
+                <div class="control-group">
+                    <label>Durata</label>
+                    <div class="toggle-group" id="durationGroup">
+                        <button class="toggle-btn" data-value="2">2s</button>
+                        <button class="toggle-btn" data-value="4">4s</button>
+                        <button class="toggle-btn active" data-value="6">6s</button>
+                    </div>
+                </div>
+
+                <!-- FPS -->
+                <div class="control-group">
+                    <label>FPS</label>
+                    <div class="toggle-group" id="fpsGroup">
+                        <button class="toggle-btn" data-value="6">6</button>
+                        <button class="toggle-btn active" data-value="8">8</button>
+                        <button class="toggle-btn" data-value="25">25</button>
+                        <button class="toggle-btn" data-value="30">30</button>
+                    </div>
+                </div>
+
+                <!-- Sampling Steps -->
                 <div class="control-group">
                     <label>
                         Sampling Steps
-                        <span class="control-value" id="stepsValue">20</span>
+                        <span class="control-value" id="stepsValue">30</span>
                     </label>
-                    <input type="range" id="steps" min="5" max="50" step="1" value="20">
+                    <input type="range" id="steps" min="10" max="50" step="5" value="30">
                     <div class="control-hint">Più step = più qualità, più lento</div>
                 </div>
 
-                <!-- Motion -->
-                <div class="control-group">
+                <!-- Motion (SVD only) -->
+                <div class="control-group svd-only hidden" id="motionGroup">
                     <label>
                         Motion Intensity
                         <span class="control-value" id="motionValue">100</span>
                     </label>
                     <input type="range" id="motion" min="1" max="255" step="1" value="100">
-                    <div class="control-hint">Basso = statico · Alto = movimento forte</div>
-                </div>
-
-                <!-- FPS -->
-                <div class="control-group">
-                    <label>
-                        FPS
-                        <span class="control-value" id="fpsValue">6</span>
-                    </label>
-                    <input type="range" id="fps" min="2" max="30" step="1" value="6">
-                </div>
-
-                <!-- Frames -->
-                <div class="control-group">
-                    <label>
-                        Frames
-                        <span class="control-value" id="framesValue">10</span>
-                    </label>
-                    <input type="range" id="frames" min="4" max="25" step="1" value="10">
-                    <div class="control-hint">Max 10 consigliato per 8GB</div>
+                    <div class="control-hint">Solo per image-to-video (SVD)</div>
                 </div>
 
                 <!-- Seed -->
@@ -168,18 +168,18 @@
                 <span class="btn-generate-text">Genera Video</span>
             </button>
 
-            <!-- ─── Memory Warning ─── -->
+            <!-- ─── Info ─── -->
             <div class="memory-warning" id="memoryWarning">
                 <span>💡</span>
-                <span>Chiudi tutte le altre app per prestazioni migliori. Il primo run scarica il modello (~4GB).</span>
+                <span>La prima generazione scarica il modello AI. I prompt funzionano con GPU NVIDIA (CogVideoX).</span>
             </div>
         </section>
     </main>
 
     <!-- ─── Footer ─── -->
     <footer class="footer">
-        <p>VideoAi — Generazione video AI 100% locale e privata</p>
-        <p class="footer-tech">Stable Video Diffusion · Apple Metal · Python</p>
+        <p>VideoAi — Generazione video AI con Text-to-Video e Image-to-Video</p>
+        <p class="footer-tech">CogVideoX · Stable Video Diffusion · NVIDIA CUDA · Python</p>
     </footer>
 
     <script src="app.js"></script>
